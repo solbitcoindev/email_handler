@@ -10,8 +10,29 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Подключение к PostgreSQL (Render даёт DATABASE_URL)
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///emails.db")
-engine = create_engine(DATABASE_URL)
+# Предпочтительно брать из переменной окружения, иначе используем предоставленный URL от пользователя
+raw_database_url = os.getenv(
+    "DATABASE_URL",
+    "postgresql://email_db_v4ul_user:FGEM0or6rqn6Jya8Ug7d0ZIgP0UVAXsZ@dpg-d3aigfs9c44c73dtv3l0-a/email_db_v4ul",
+)
+
+# Нормализуем схемы и добавляем sslmode=require при необходимости (Render обычно требует SSL)
+def _normalize_database_url(url: str) -> str:
+    if not url:
+        return url
+    normalized = url
+    # Heroku-style "postgres://" → SQLAlchemy ожидает "postgresql://"
+    if normalized.startswith("postgres://"):
+        normalized = "postgresql://" + normalized[len("postgres://"):]
+    # Если нет параметра sslmode, добавим его как require
+    if normalized.startswith("postgresql://") and "sslmode=" not in normalized:
+        separator = "&" if "?" in normalized else "?"
+        normalized = f"{normalized}{separator}sslmode=require"
+    return normalized
+
+DATABASE_URL = _normalize_database_url(raw_database_url)
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 Base = declarative_base()
 SessionLocal = sessionmaker(bind=engine)
 
